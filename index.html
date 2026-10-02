@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能电网运行监控系统 - 小作业</title>
+    
+    <!-- 👇 Eruda 调试工具 👇 -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>
+        if (window.eruda) {
+            window.eruda.init();
+            console.log('Eruda 调试面板已加载，等待电网系统初始化...');
+        }
+    </script>
+
+    <style>
+        :root {
+            --bg-color: #0a192f;
+            --panel-bg: rgba(16, 33, 65, 0.9);
+            --text-main: #ccd6f6;
+            --text-dim: #8892b0;
+            --accent-cyan: #64ffda;
+            --accent-green: #00ff88;
+            --accent-red: #ff5555;
+            --accent-warning: #ffcc00;
+            --border-glow: rgba(100, 255, 218, 0.3);
+            --console-bg: #0d1117;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #020c1b 0%, #0a192f 100%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-glow);
+            background: var(--panel-bg);
+            border-radius: 10px;
+        }
+
+        header h1 {
+            font-size: 1.1rem;
+            color: var(--accent-cyan);
+            letter-spacing: 2px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: pulse 1.5s infinite;
+        }
+
+        .map-panel {
+            flex: 1;
+            min-height: 380px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-glow);
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .map-panel h2 {
+            font-size: 1rem;
+            color: var(--text-dim);
+            border-left: 3px solid var(--accent-cyan);
+            padding-left: 10px;
+            margin-bottom: 15px;
+        }
+
+        .canvas-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            padding-bottom: 5px;
+        }
+
+        #gridCanvas {
+            width: 100%;
+            min-width: 550px;
+            height: 350px;
+            display: block;
+        }
+
+        .console-panel {
+            flex: 0 0 220px;
+            background: var(--console-bg);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+        }
+
+        .console-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            color: #c9d1d9;
+            font-weight: bold;
+            font-size: 0.95rem;
+        }
+
+        .warning-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-warning);
+            font-size: 1.2rem;
+            animation: pulse 1s infinite;
+        }
+
+        .console-output {
+            flex: 1;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+            padding: 5px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .console-line { margin-bottom: 4px; word-break: break-all; }
+        .console-line.error { color: var(--accent-red); font-weight: bold; }
+        .console-line.success { color: var(--accent-green); }
+        .console-line.warning { color: var(--accent-warning); }
+        .console-line.info { color: var(--text-dim); }
+
+        .console-input-wrapper {
+            display: flex;
+            align-items: center;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+
+        .console-prompt { color: var(--accent-cyan); margin-right: 10px; font-family: monospace; font-weight: bold; }
+        .console-input { flex: 1; background: transparent; border: none; outline: none; color: #c9d1d9; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9rem; }
+        .console-input::placeholder { color: #484f58; }
+
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>⚡ 智能电网运行监控系统</h1>
+        <div><span class="status-dot"></span><span style="font-size: 0.9rem; color: var(--accent-green);">系统在线</span></div>
+    </header>
+
+    <div class="map-panel">
+        <h2>电网拓扑结构图 (用电 / 换流 / 发电 / 中控 / 系统卡片)</h2>
+        <div class="canvas-wrapper">
+            <canvas id="gridCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="console-panel">
+        <div class="console-header">
+            <span>系统 CONSOLE (控制台)</span>
+            <span class="warning-icon" title="系统警告">⚠️</span>
+        </div>
+        <div class="console-output" id="consoleOutput"></div>
+        <div class="console-input-wrapper">
+            <span class="console-prompt">></span>
+            <input type="text" class="console-input" id="consoleInput" placeholder="输入指令，如：帮助" autocomplete="off">
+        </div>
+    </div>
+
+    <script>
+        // ================= 1. 数据状态管理 =================
+        let systemState = { voltage: 220.5, frequency: 50.02, load: 76.8 };
+
+        function updateData() {
+            systemState.voltage = (220 + Math.random() * 1).toFixed(1);
+            systemState.frequency = (50 + (Math.random() - 0.5) * 0.2).toFixed(2);
+            let load = parseFloat(systemState.load) + (Math.random() - 0.5) * 2;
+            if (load < 30) load = 30; if (load > 99) load = 99;
+            systemState.load = load.toFixed(1);
+        }
+        setInterval(updateData, 2000);
+
+        // ================= 2. 系统控制台交互逻辑 =================
+        const consoleInput = document.getElementById('consoleInput');
+        const consoleOutput = document.getElementById('consoleOutput');
+
+        function writeConsole(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `console-line ${type}`;
+            let prefix = '';
+            if (type === 'error') prefix = '❌ ';
+            if (type === 'success') prefix = '✅ ';
+            if (type === 'warning') prefix = '⚠️ ';
+            div.textContent = prefix + msg;
+            consoleOutput.appendChild(div);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            if (consoleOutput.children.length > 50) consoleOutput.removeChild(consoleOutput.firstChild);
+        }
+
+        setTimeout(() => {
+            writeConsole('[电网系统] 初始化成功', 'success');
+            setTimeout(() => { writeConsole('系统就绪，输入 "帮助" 查看可用指令。', 'info'); }, 1000);
+        }, 500);
+
+        consoleInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                if (!cmd) return;
+                this.value = '';
+                writeConsole(`> ${cmd}`, 'info');
+                handleCommand(cmd);
+            }
+        });
+
+        function handleCommand(cmd) {
+            switch(cmd) {
+                case '帮助': case 'help':
+                    writeConsole('--- 可用控制指令 ---', 'info');
+                    writeConsole('1. 增加发电电量 (加速电流)', 'info');
+                    writeConsole('2. 降低发电电量 (减缓电流)', 'info');
+                    writeConsole('3. 查看系统状态', 'info');
+                    writeConsole('4. 触发过载故障 (模拟报错)', 'info');
+                    writeConsole('5. 清除故障', 'info');
+                    break;
+                case '增加发电电量':
+                    speedMultiplier += 0.5; if (speedMultiplier > 3) speedMultiplier = 3;
+                    writeConsole('调度指令执行：发电出力增加，潮流加速！', 'success');
+                    console.log('调度指令：增加发电电量，当前倍率 ' + speedMultiplier);
+                    break;
+                case '降低发电电量':
+                    speedMultiplier -= 0.5; if (speedMultiplier < 0.3) speedMultiplier = 0.3;
+                    writeConsole('调度指令执行：发电出力降低，潮流减缓。', 'success');
+                    console.log('调度指令：降低发电电量，当前倍率 ' + speedMultiplier);
+                    break;
+                case '查看系统状态':
+                    writeConsole(`📊 电压: ${systemState.voltage}kV | 频率: ${systemState.frequency}Hz | 负载: ${systemState.load}%`, 'info');
+                    break;
+                case '触发过载故障':
+                    console.error('❌ 节点 C 过载！电压波动超过安全阈值！');
+                    writeConsole('系统发出警报，详情请查看 Eruda 控制台。', 'warning');
+                    break;
+                case '清除故障':
+                    console.log('✅ 故障已清除，电网恢复正常运行。');
+                    writeConsole('故障已清除，电网恢复正常运行。', 'success');
+                    break;
+                default: writeConsole(`未知命令: "${cmd}"。输入 "帮助" 查看可用命令。`, 'error');
+            }
+        }
+
+        // ================= 3. 拓扑图绘制与粒子流向 (完美修正版) =================
+        const canvas = document.getElementById('gridCanvas');
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            let nodes = [], edges = [], particles = [];
+            let speedMultiplier = 1;
+
+            function resizeCanvas() {
+                const rect = canvas.parentElement.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                const canvasWidth = Math.max(rect.width, 550);
+                const canvasHeight = 350;
+                
+                canvas.width = canvasWidth * dpr;
+                canvas.height = canvasHeight * dpr;
+                canvas.style.width = canvasWidth + 'px';
+                canvas.style.height = canvasHeight + 'px';
+                
+                ctx.scale(dpr, dpr);
+                initTopology(canvasWidth, canvasHeight);
+            }
+
+            function initTopology(width, height) {
+                nodes = []; edges = []; particles = [];
+                
+                // 节点坐标（索引很重要，连线依赖索引）
+                const userNodes = [
+                    { x: 60, y: height * 0.15, type: 'user' },
+                    { x: 60, y: height * 0.38, type: 'user' },
+                    { x: 60, y: height * 0.62, type: 'user' },
+                    { x: 60, y: height * 0.85, type: 'user' }
+                ];
+                const conv1 = { x: width * 0.25, y: height * 0.3, type: 'converter' };
+                const conv2 = { x: width * 0.25, y: height * 0.7, type: 'converter' };
+                const genNode = { x: width * 0.42, y: height * 0.5, type: 'gen' };
+                const centerNode = { x: width * 0.65, y: height * 0.5, type: 'center' };
+                const cardNodes = [
+                    { x: width * 0.9, y: height * 0.2, type: 'card', title: '电压' },
+                    { x: width * 0.9, y: height * 0.5, type: 'card', title: '频率' },
+                    { x: width * 0.9, y: height * 0.8, type: 'card', title: '负载' }
+                ];
+
+                let allNodes = [...userNodes, conv1, conv2, genNode, centerNode, ...cardNodes];
+                allNodes.forEach((n, index) => {
+                    let radius = 6; let color = '#00ff88';
+                    if (n.type === 'converter') { radius = 15; color = '#64ffda'; }
+                    if (n.type === 'gen') { radius = 12; color = '#64ffda'; }
+                    if (n.type === 'center') { radius = 25; color = '#ff5555'; }
+                    if (n.type === 'card') { radius = 0; color = '#8892b0'; }
+                    nodes.push({ x: n.x, y: n.y, type: n.type, radius: radius, color: color, index: index, title: n.title });
+                });
+
+                // ⚡ 核心修正：按照真实电网逻辑重新连边 ⚡
+                // 1. 发电站(6) -> 换流站(4, 5)
+                edges.push({ from: 6, to: 4 }); edges.push({ from: 6, to: 5 });
+                
+                // 2. 发电站(6) -> 中控枢纽(7)
+                edges.push({ from: 6, to: 7 });
+                
+                // 3. 换流站(4, 5) -> 用电端(0, 1, 2, 3)
+                edges.push({ from: 4, to: 0 }); edges.push({ from: 4, to: 1 });
+                edges.push({ from: 5, to: 2 }); edges.push({ from: 5, to: 3 });
+                
+                // 4. 中控枢纽(7) -> 用电端(0, 1, 2, 3)
+                edges.push({ from: 7, to: 0 }); edges.push({ from: 7, to: 1 });
+                edges.push({ from: 7, to: 2 }); edges.push({ from: 7, to: 3 });
+                
+                // 5. 中控枢纽(7) -> 系统卡片(8, 9, 10) 【只从中控输】
+                edges.push({ from: 7, to: 8 }); edges.push({ from: 7, to: 9 }); edges.push({ from: 7, to: 10 });
+            }
+
+            function createParticle() {
+                if (edges.length === 0) return;
+                const edge = edges[Math.floor(Math.random() * edges.length)];
+                particles.push({
+                    edge: edge,
+                    progress: 0,
+                    speed: (0.01 + Math.random() * 0.02) * speedMultiplier,
+                    color: '#00ff88'
+                });
+            }
+
+            function draw() {
+                const w = canvas.width / (window.devicePixelRatio || 1);
+                const h = canvas.height / (window.devicePixelRatio || 1);
+                ctx.clearRect(0, 0, w, h);
+
+                // 1. 绘制底色线条
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(100, 255, 218, 0.15)';
+                edges.forEach(edge => {
+                    const from = nodes[edge.from], to = nodes[edge.to];
+                    ctx.beginPath(); ctx.moveTo(from.x, from.y);
+                    if (to.type === 'card') {
+                        ctx.lineTo(to.x - 60, to.y);
+                    } else {
+                        ctx.lineTo(to.x, to.y);
+                    }
+                    ctx.stroke();
+                });
+
+                // 2. 绘制流动粒子 (方向完全由 edges 的 from->to 决定，绝对正向流动)
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.progress += p.speed;
+                    if (p.progress >= 1) { particles.splice(i, 1); continue; }
+                    const from = nodes[p.edge.from], to = nodes[p.edge.to];
+                    const px = from.x + (to.x - from.x) * p.progress;
+                    const py = from.y + (to.y - from.y) * p.progress;
+                    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = p.color; ctx.shadowBlur = 12; ctx.shadowColor = p.color;
+                    ctx.fill(); ctx.shadowBlur = 0;
+                }
+
+                // 3. 绘制节点和文字标注
+                nodes.forEach(node => {
+                    if (node.type === 'card') {
+                        const cardW = 120, cardH = 70;
+                        ctx.fillStyle = 'rgba(136, 146, 176, 0.1)';
+                        ctx.strokeStyle = '#8892b0'; ctx.lineWidth = 1.5;
+                        ctx.beginPath(); ctx.rect(node.x - cardW/2, node.y - cardH/2, cardW, cardH);
+                        ctx.fill(); ctx.stroke();
+
+                        ctx.fillStyle = '#ccd6f6'; ctx.font = 'bold 14px sans-serif';
+                        ctx.fillText(node.title, node.x - 50, node.y - 15);
+
+                        let percent = 0.5; 
+                        if (node.title === '电压') percent = Math.min(1, parseFloat(systemState.voltage) / 250);
+                        if (node.title === '频率') percent = Math.min(1, parseFloat(systemState.frequency) / 55);
+                        if (node.title === '负载') percent = Math.min(1, parseFloat(systemState.load) / 100);
+
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                        ctx.fillRect(node.x - 50, node.y + 5, 100, 12);
+                        
+                        ctx.fillStyle = '#64ffda';
+                        ctx.fillRect(node.x - 50, node.y + 5, 100 * percent, 12);
+                        
+                        ctx.fillStyle = '#ccd6f6'; ctx.font = 'bold 12px sans-serif';
+                        ctx.fillText((percent * 100).toFixed(0) + '%', node.x + 20, node.y + 16);
+
+                    } else {
+                        ctx.beginPath(); ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+                        ctx.fillStyle = node.color; ctx.shadowBlur = 15; ctx.shadowColor = node.color;
+                        ctx.fill(); ctx.shadowBlur = 0;
+                        
+                        ctx.fillStyle = '#ccd6f6'; ctx.font = '12px sans-serif';
+                        if (node.type === 'user') ctx.fillText('用电', node.x + 15, node.y + 4);
+                        if (node.type === 'converter') ctx.fillText('换流', node.x + 20, node.y + 4);
+                        if (node.type === 'gen') ctx.fillText('发电', node.x + 18, node.y + 4);
+                        if (node.type === 'center') {
+                            ctx.fillText('中控', node.x + 30, node.y + 4);
+                            ctx.fillStyle = '#ff5555'; ctx.font = 'bold 10px sans-serif';
+                            ctx.fillText('枢纽', node.x + 30, node.y + 18);
+                        }
+                    }
+                });
+
+                if (Math.random() > 0.3) createParticle();
+                requestAnimationFrame(draw);
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas(); draw();
+        }
+    </script>
+</body>
+</html>
